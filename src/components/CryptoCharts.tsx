@@ -22,12 +22,17 @@ interface CurveData {
   launchPriceSOL: number;
   launchPriceUSD: number;
   launchTimestamp: string;
+  launchMarketCapUSD: number;
+  launchMarketCapSOL: number;
+  percentageFromLaunch: number;
   
   // ATH
   athSOL: number;
   athUSD: number;
   athTimestamp: string;
   percentageFromATH: number;
+  athMarketCapUSD: number;
+  athMarketCapSOL: number;
   
   // داده‌های چارت
   priceHistory: any[];
@@ -38,17 +43,15 @@ interface CurveData {
 }
 
 const CryptoChart: React.FC = () => {
-  const [curveData, setCurveData] = useState<CurveData | null>(null);
+    const [curveData, setCurveData] = useState<CurveData | null>(null);
   const [allCurves, setAllCurves] = useState<CurveData[]>([]);
   const [topATH, setTopATH] = useState<CurveData[]>([]);
   const [isConnected, setIsConnected] = useState(false);
-  const [activeTab, setActiveTab] = useState<'single' | 'all' | 'ath'>('single');
+  const [activeTab, setActiveTab] = useState<'single' | 'all' | 'ath'>('all'); // تغییر به all به عنوان پیش‌فرض
   const [chartType, setChartType] = useState<'dual' | 'price' | 'marketcap'>('dual');
   const ws = useRef<WebSocket | null>(null);
 
-  const defaultCurveAddress = "pztfcvhCdyKwe9amAvd32fdo1E9gKMPw39m6yjaFYno";
-
-  useEffect(() => {
+   useEffect(() => {
     const socketUrl = 'ws://localhost:8080';
     ws.current = new WebSocket(socketUrl);
 
@@ -56,11 +59,10 @@ const CryptoChart: React.FC = () => {
       console.log('✅ Connected to WebSocket server');
       setIsConnected(true);
       
-      // درخواست اولیه برای داده single curve
+      // درخواست اولیه برای همه curves
       if (ws.current) {
         ws.current.send(JSON.stringify({
-          type: 'GET_CURVE_DATA',
-          curveAddress: defaultCurveAddress
+          type: 'GET_ALL_CURVES'
         }));
       }
     };
@@ -124,7 +126,7 @@ const CryptoChart: React.FC = () => {
     }
   };
 
-  const loadSingleCurve = (curveAddress: string = defaultCurveAddress) => {
+  const loadSingleCurve = (curveAddress: string) => {
     if (ws.current && ws.current.readyState === WebSocket.OPEN) {
       setActiveTab('single');
       ws.current.send(JSON.stringify({
@@ -134,7 +136,7 @@ const CryptoChart: React.FC = () => {
     }
   };
 
-  if (!curveData && activeTab === 'single') {
+ if (activeTab === 'single' && !curveData) {
     return (
       <div style={{ 
         padding: '20px', 
@@ -169,18 +171,19 @@ const CryptoChart: React.FC = () => {
         justifyContent: 'center',
         flexWrap: 'wrap'
       }}>
-        <button 
-          onClick={() => loadSingleCurve()}
+           <button 
+          onClick={loadAllCurves}
           style={{
+            marginTop: '20px',
             padding: '10px 20px',
-            background: activeTab === 'single' ? '#238636' : '#161b22',
+            background: '#238636',
             color: 'white',
-            border: '1px solid #30363d',
+            border: 'none',
             borderRadius: '5px',
             cursor: 'pointer'
           }}
         >
-          📈 Single Curve
+          Browse All Curves
         </button>
         <button 
           onClick={loadAllCurves}
@@ -247,6 +250,7 @@ const CryptoChart: React.FC = () => {
 };
 
 // کامپوننت برای نمایش single curve با چارت
+// کامپوننت برای نمایش single curve با چارت
 interface SingleCurveViewProps {
   curveData: CurveData;
   chartType: 'dual' | 'price' | 'marketcap';
@@ -263,9 +267,58 @@ const SingleCurveView: React.FC<SingleCurveViewProps> = ({
     return `${address.slice(0, 8)}...${address.slice(-8)}`;
   };
 
+  // محاسبه ATH واقعی از priceHistory
+  const calculateRealATH = () => {
+    if (!curveData.priceHistory || curveData.priceHistory.length === 0) {
+      return {
+        athSOL: curveData.athSOL || 0,
+        athUSD: curveData.athUSD || 0,
+        athMarketCapUSD: curveData.athMarketCapUSD || 0,
+        athTimestamp: curveData.athTimestamp || new Date().toISOString(),
+        percentageFromATH: curveData.percentageFromATH || 0
+      };
+    }
+
+    let maxPriceSOL = 0;
+    let maxPriceUSD = 0;
+    let maxMarketCapUSD = 0;
+    let athTimestamp = curveData.priceHistory[0].x;
+    
+    // پیدا کردن بالاترین قیمت در تاریخچه
+    curveData.priceHistory.forEach(point => {
+      if (point.y > maxPriceSOL) {
+        maxPriceSOL = point.y;
+        maxPriceUSD = point.priceUSD || (point.y * curveData.solPrice);
+        maxMarketCapUSD = point.marketCapUSD || 0;
+        athTimestamp = point.x;
+      }
+    });
+
+    // محاسبه درصد تغییر از ATH
+    const currentPrice = curveData.currentPriceSOL;
+    const percentageFromATH = maxPriceSOL > 0 
+      ? ((currentPrice - maxPriceSOL) / maxPriceSOL) * 100 
+      : 0;
+
+    return {
+      athSOL: maxPriceSOL,
+      athUSD: maxPriceUSD,
+      athMarketCapUSD: maxMarketCapUSD,
+      athTimestamp: athTimestamp,
+      percentageFromATH: percentageFromATH
+    };
+  };
+
+  const realATH = calculateRealATH();
+  
+  // استفاده از داده‌های واقعی ATH
+  const displayATHSOL = realATH.athSOL;
+  const displayATHUSD = realATH.athUSD;
+  const displayATHMarketCapUSD = realATH.athMarketCapUSD;
+  const displayATHTimestamp = new Date(realATH.athTimestamp);
+
   // تبدیل string به Date برای استفاده در چارت
   const launchDate = new Date(curveData.launchTimestamp);
-  const athDate = new Date(curveData.athTimestamp);
   const lastUpdatedDate = new Date(curveData.lastUpdated);
 
   // محاسبه درصد تغییر از لانچ
@@ -294,7 +347,6 @@ const SingleCurveView: React.FC<SingleCurveViewProps> = ({
       },
       animations: {
         enabled: true,
-        
         speed: 800
       }
     },
@@ -418,8 +470,8 @@ const SingleCurveView: React.FC<SingleCurveViewProps> = ({
         }
       },
       {
-        x: athDate.getTime(),
-        y: curveData.athSOL,
+        x: displayATHTimestamp.getTime(),
+        y: displayATHSOL,
         yAxisIndex: 0,
         marker: {
           size: 6,
@@ -435,7 +487,7 @@ const SingleCurveView: React.FC<SingleCurveViewProps> = ({
             background: '#ff7b72',
             fontSize: '11px'
           },
-          text: `ATH: ${curveData.athSOL.toFixed(8)} SOL`
+          text: `ATH: ${displayATHSOL.toFixed(8)} SOL`
         }
       }]
     }
@@ -489,8 +541,8 @@ const SingleCurveView: React.FC<SingleCurveViewProps> = ({
         }
       },
       {
-        x: athDate.getTime(),
-        y: curveData.athSOL,
+        x: displayATHTimestamp.getTime(),
+        y: displayATHSOL,
         marker: {
           size: 6,
           fillColor: '#ff7b72',
@@ -505,7 +557,7 @@ const SingleCurveView: React.FC<SingleCurveViewProps> = ({
             background: '#ff7b72',
             fontSize: '12px'
           },
-          text: `ATH: ${curveData.athSOL.toFixed(8)} SOL`
+          text: `ATH: ${displayATHSOL.toFixed(8)} SOL`
         }
       }]
     }
@@ -540,7 +592,7 @@ const SingleCurveView: React.FC<SingleCurveViewProps> = ({
     annotations: {
       points: [{
         x: launchDate.getTime(),
-        y: curveData.launchPriceUSD,
+        y: curveData.launchMarketCapUSD,
         marker: {
           size: 6,
           fillColor: '#ffd33d',
@@ -555,12 +607,12 @@ const SingleCurveView: React.FC<SingleCurveViewProps> = ({
             background: '#ffd33d',
             fontSize: '12px'
           },
-          text: `Launch: $${curveData.launchPriceUSD.toLocaleString()}`
+          text: `Launch: $${curveData.launchMarketCapUSD.toLocaleString()}`
         }
       },
       {
-        x: athDate.getTime(),
-        y: curveData.athUSD,
+        x: displayATHTimestamp.getTime(),
+        y: displayATHMarketCapUSD,
         marker: {
           size: 6,
           fillColor: '#ff7b72',
@@ -575,7 +627,7 @@ const SingleCurveView: React.FC<SingleCurveViewProps> = ({
             background: '#ff7b72',
             fontSize: '12px'
           },
-          text: `ATH: $${curveData.athUSD.toLocaleString()}`
+          text: `ATH: $${displayATHMarketCapUSD.toLocaleString()}`
         }
       }]
     }
@@ -692,7 +744,7 @@ const SingleCurveView: React.FC<SingleCurveViewProps> = ({
           </p>
         </div>
 
-        {/* کارت ATH */}
+        {/* کارت ATH - با داده‌های واقعی از چارت */}
         <div style={{
           background: '#161b22',
           padding: '20px',
@@ -701,13 +753,22 @@ const SingleCurveView: React.FC<SingleCurveViewProps> = ({
         }}>
           <h3>🏆 All Time High</h3>
           <p style={{ fontSize: '24px', fontWeight: 'bold', color: '#ff7b72' }}>
-            {curveData.athSOL.toFixed(8)} SOL
+            {displayATHSOL.toFixed(8)} SOL
           </p>
           <p style={{ fontSize: '18px', color: '#8b949e' }}>
-            ${curveData.athUSD.toLocaleString()} USD
+            ${displayATHUSD.toLocaleString()} USD
           </p>
-          <p style={{ fontSize: '14px', color: '#8b949e' }}>
-            Date: {athDate.toLocaleDateString()}
+          <p style={{ 
+            fontSize: '14px', 
+            color: realATH.percentageFromATH >= 0 ? '#3fb950' : '#ff7b72'
+          }}>
+            {realATH.percentageFromATH >= 0 ? '📈' : '📉'} {realATH.percentageFromATH.toFixed(2)}% from ATH
+          </p>
+          <p style={{ fontSize: '12px', color: '#8b949e' }}>
+            Date: {displayATHTimestamp.toLocaleDateString()}
+          </p>
+          <p style={{ fontSize: '10px', color: '#8b949e', fontStyle: 'italic' }}>
+            ATH Market Cap: ${displayATHMarketCapUSD.toLocaleString()}
           </p>
         </div>
 
@@ -727,9 +788,9 @@ const SingleCurveView: React.FC<SingleCurveViewProps> = ({
           </p>
           <p style={{ 
             fontSize: '14px', 
-            color: curveData.percentageFromATH >= 0 ? '#3fb950' : '#ff7b72'
+            color: realATH.percentageFromATH >= 0 ? '#3fb950' : '#ff7b72'
           }}>
-            From ATH: {curveData.percentageFromATH.toFixed(2)}%
+            From ATH: {realATH.percentageFromATH.toFixed(2)}%
           </p>
         </div>
       </div>
@@ -867,9 +928,6 @@ const SingleCurveView: React.FC<SingleCurveViewProps> = ({
   );
 };
 
-// کامپوننت‌های AllCurvesView و TopATHView بدون تغییر باقی می‌مانند...
-// (کدهای قبلی را اینجا قرار دهید)
-
 // کامپوننت برای نمایش همه curves
 const AllCurvesView: React.FC<{ 
   curves: CurveData[]; 
@@ -922,7 +980,10 @@ const AllCurvesView: React.FC<{
                     {curve.percentageFromATH.toFixed(2)}% from ATH
                   </div>
                   <div style={{ fontSize: '12px', color: '#8b949e' }}>
-                    ATH: ${curve.athUSD.toLocaleString()}
+                    ATH: ${curve.athUSD.toLocaleString()} USD
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#8b949e' }}>
+                    ATH: {curve.athSOL.toFixed(8)} SOL
                   </div>
                 </div>
               </div>
@@ -974,7 +1035,9 @@ const TopATHView: React.FC<{
                 <div>
                   <strong>#{index + 1}. {formatAddress(curve.curveAddress)}</strong>
                   <div style={{ fontSize: '14px', color: '#8b949e' }}>
-                    ATH: ${curve.athUSD.toLocaleString()} | 
+                    ATH Price: {curve.athSOL.toFixed(8)} SOL (${curve.athUSD.toLocaleString()} USD)
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#8b949e' }}>
                     Date: {new Date(curve.athTimestamp).toLocaleDateString()}
                   </div>
                 </div>
@@ -987,6 +1050,9 @@ const TopATHView: React.FC<{
                     color: curve.percentageFromATH >= 0 ? '#3fb950' : '#ff7b72'
                   }}>
                     {curve.percentageFromATH.toFixed(2)}% from ATH
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#8b949e' }}>
+                    Current: {curve.currentPriceSOL.toFixed(8)} SOL
                   </div>
                 </div>
               </div>
