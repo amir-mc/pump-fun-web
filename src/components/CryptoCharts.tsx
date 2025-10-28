@@ -1,5 +1,6 @@
+// CryptoChart.tsx
 import React, { useEffect, useState, useRef } from 'react';
-import Chart from 'react-apexcharts';
+import BondingCurveChart from './BondingCurveChart';
 
 interface CurveData {
   curveAddress: string;
@@ -11,47 +12,53 @@ interface CurveData {
   complete: boolean;
   creator: string | null;
   lastUpdated: string;
-  
-  // قیمت و مارکت کپ
   currentPriceSOL: number;
   currentPriceUSD: number;
   currentMarketCapSOL: number;
   currentMarketCapUSD: number;
-  
-  // اطلاعات لانچ
   launchPriceSOL: number;
   launchPriceUSD: number;
   launchTimestamp: string;
   launchMarketCapUSD: number;
   launchMarketCapSOL: number;
   percentageFromLaunch: number;
-  
-  // ATH
   athSOL: number;
   athUSD: number;
   athTimestamp: string;
   percentageFromATH: number;
   athMarketCapUSD: number;
   athMarketCapSOL: number;
-  
-  // داده‌های چارت
   priceHistory: any[];
-  
-  // متا داده
   solPrice: number;
   timestamp: string;
 }
 
+interface TopATHData {
+  curveAddress: string;
+  athSOL: number;
+  athUSD: number;
+  athTimestamp: string;
+  athMarketCapUSD: number;
+  athMarketCapSOL: number;
+  currentPriceSOL: number;
+  currentPriceUSD: number;
+  currentMarketCapSOL: number;
+  currentMarketCapUSD: number;
+  percentageFromATH: number;
+  lastUpdated: string;
+}
+
 const CryptoChart: React.FC = () => {
-    const [curveData, setCurveData] = useState<CurveData | null>(null);
+  const [curveData, setCurveData] = useState<CurveData | null>(null);
   const [allCurves, setAllCurves] = useState<CurveData[]>([]);
-  const [topATH, setTopATH] = useState<CurveData[]>([]);
+  const [topATH, setTopATH] = useState<TopATHData[]>([]);
   const [isConnected, setIsConnected] = useState(false);
-  const [activeTab, setActiveTab] = useState<'single' | 'all' | 'ath'>('all'); // تغییر به all به عنوان پیش‌فرض
+  const [activeTab, setActiveTab] = useState<'single' | 'all' | 'ath'>('all');
   const [chartType, setChartType] = useState<'dual' | 'price' | 'marketcap'>('dual');
+  const [availableCurves, setAvailableCurves] = useState<string[]>([]);
   const ws = useRef<WebSocket | null>(null);
 
-   useEffect(() => {
+  useEffect(() => {
     const socketUrl = 'ws://localhost:8080';
     ws.current = new WebSocket(socketUrl);
 
@@ -73,17 +80,26 @@ const CryptoChart: React.FC = () => {
         
         console.log('📨 Received WebSocket message:', data.type);
         
-        if (data.type === 'CURVE_DATA') {
-          console.log('📊 Setting curve data:', data.data);
+        if (data.type === 'CONNECTION_STATUS') {
+          console.log('🔗 Connection status:', data);
+        } else if (data.type === 'CURVE_DATA') {
+          console.log('📊 Setting curve data:', data.data.curveAddress);
           setCurveData(data.data);
+          setActiveTab('single');
         } else if (data.type === 'ALL_CURVES_DATA') {
           console.log('🌟 Setting all curves data:', data.data.length);
           setAllCurves(data.data);
         } else if (data.type === 'TOP_ATH_DATA') {
           console.log('🏆 Setting top ATH data:', data.data.length);
           setTopATH(data.data);
+        } else if (data.type === 'AVAILABLE_CURVES') {
+          console.log('📋 Setting available curves:', data.data.length);
+          setAvailableCurves(data.data);
         } else if (data.type === 'ERROR') {
           console.error('❌ WebSocket error:', data.message);
+          if (data.availableCurves) {
+            setAvailableCurves(data.availableCurves);
+          }
         }
       } catch (error) {
         console.error('❌ Error parsing WebSocket message:', error);
@@ -136,7 +152,15 @@ const CryptoChart: React.FC = () => {
     }
   };
 
- if (activeTab === 'single' && !curveData) {
+  const loadAvailableCurves = () => {
+    if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+      ws.current.send(JSON.stringify({
+        type: 'GET_AVAILABLE_CURVES'
+      }));
+    }
+  };
+
+  if (activeTab === 'single' && !curveData) {
     return (
       <div style={{ 
         padding: '20px', 
@@ -147,31 +171,7 @@ const CryptoChart: React.FC = () => {
       }}>
         <div>🔄 Loading bonding curve data...</div>
         <div>Status: {isConnected ? '✅ Connected' : '❌ Disconnected'}</div>
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ 
-      padding: '20px', 
-      background: '#0d1117',
-      minHeight: '100vh',
-      color: 'white',
-      fontFamily: 'Arial, sans-serif'
-    }}>
-      <h1 style={{ textAlign: 'center', marginBottom: '30px' }}>
-        📊 Advanced Bonding Curve Analytics
-      </h1>
-
-      {/* تب‌ها */}
-      <div style={{ 
-        display: 'flex', 
-        gap: '10px', 
-        marginBottom: '20px',
-        justifyContent: 'center',
-        flexWrap: 'wrap'
-      }}>
-           <button 
+        <button 
           onClick={loadAllCurves}
           style={{
             marginTop: '20px',
@@ -185,6 +185,30 @@ const CryptoChart: React.FC = () => {
         >
           Browse All Curves
         </button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ 
+      padding: '20px', 
+      background: '#0d1117',
+      minHeight: '100vh',
+      color: 'white',
+      fontFamily: 'Arial, sans-serif'
+    }}>
+      <h1 style={{ textAlign: 'center', marginBottom: '30px' }}>
+        📊 Advanced Bonding Curve Analytics (Corrected ATH Formula)
+      </h1>
+
+      {/* تب‌ها */}
+      <div style={{ 
+        display: 'flex', 
+        gap: '10px', 
+        marginBottom: '20px',
+        justifyContent: 'center',
+        flexWrap: 'wrap'
+      }}>
         <button 
           onClick={loadAllCurves}
           style={{
@@ -209,7 +233,21 @@ const CryptoChart: React.FC = () => {
             cursor: 'pointer'
           }}
         >
-          🏆 Top ATH
+          🏆 Top ATH (Corrected)
+        </button>
+        <button 
+          onClick={loadAvailableCurves}
+          style={{
+            padding: '10px 20px',
+            background: '#161b22',
+            color: 'white',
+            border: '1px solid #30363d',
+            borderRadius: '5px',
+            cursor: 'pointer',
+            fontSize: '12px'
+          }}
+        >
+          🔄 Refresh
         </button>
       </div>
 
@@ -218,16 +256,22 @@ const CryptoChart: React.FC = () => {
         <SingleCurveView 
           curveData={curveData} 
           chartType={chartType}
-          setChartType={setChartType}
+          onChartTypeChange={setChartType}
         />
       )}
 
       {activeTab === 'all' && (
-        <AllCurvesView curves={allCurves} onCurveClick={loadSingleCurve} />
+        <AllCurvesView 
+          curves={allCurves} 
+          onCurveClick={loadSingleCurve} 
+        />
       )}
 
       {activeTab === 'ath' && (
-        <TopATHView curves={topATH} onCurveClick={loadSingleCurve} />
+        <TopATHView 
+          curves={topATH} 
+          onCurveClick={loadSingleCurve} 
+        />
       )}
 
       {/* وضعیت اتصال */}
@@ -245,77 +289,48 @@ const CryptoChart: React.FC = () => {
         <br />
         <small>SOL: ${curveData?.solPrice || 172}</small>
       </div>
+
+      {/* اطلاعات پایین صفحه */}
+      <div style={{
+        marginTop: '30px',
+        padding: '15px',
+        background: '#161b22',
+        borderRadius: '10px',
+        border: '1px solid #30363d',
+        fontSize: '12px',
+        color: '#8b949e',
+        textAlign: 'center'
+      }}>
+        <div>📊 <strong>Corrected ATH Formula:</strong> Using transaction-by-transaction virtual reserves simulation</div>
+        <div>🔢 <strong>Total Curves:</strong> {availableCurves.length} available | {allCurves.length} loaded</div>
+        <div>🔄 <strong>Last Update:</strong> {new Date().toLocaleString()}</div>
+      </div>
     </div>
   );
 };
 
-// کامپوننت برای نمایش single curve با چارت
-// کامپوننت برای نمایش single curve با چارت
+// کامپوننت برای نمایش single curve
 interface SingleCurveViewProps {
   curveData: CurveData;
   chartType: 'dual' | 'price' | 'marketcap';
-  setChartType: (type: 'dual' | 'price' | 'marketcap') => void;
+  onChartTypeChange: (type: 'dual' | 'price' | 'marketcap') => void;
 }
 
 const SingleCurveView: React.FC<SingleCurveViewProps> = ({ 
   curveData, 
   chartType,
-  setChartType
+  onChartTypeChange
 }) => {
   const formatAddress = (address: string | null) => {
     if (!address) return 'N/A';
     return `${address.slice(0, 8)}...${address.slice(-8)}`;
   };
 
-  // محاسبه ATH واقعی از priceHistory
-  const calculateRealATH = () => {
-    if (!curveData.priceHistory || curveData.priceHistory.length === 0) {
-      return {
-        athSOL: curveData.athSOL || 0,
-        athUSD: curveData.athUSD || 0,
-        athMarketCapUSD: curveData.athMarketCapUSD || 0,
-        athTimestamp: curveData.athTimestamp || new Date().toISOString(),
-        percentageFromATH: curveData.percentageFromATH || 0
-      };
-    }
-
-    let maxPriceSOL = 0;
-    let maxPriceUSD = 0;
-    let maxMarketCapUSD = 0;
-    let athTimestamp = curveData.priceHistory[0].x;
-    
-    // پیدا کردن بالاترین قیمت در تاریخچه
-    curveData.priceHistory.forEach(point => {
-      if (point.y > maxPriceSOL) {
-        maxPriceSOL = point.y;
-        maxPriceUSD = point.priceUSD || (point.y * curveData.solPrice);
-        maxMarketCapUSD = point.marketCapUSD || 0;
-        athTimestamp = point.x;
-      }
-    });
-
-    // محاسبه درصد تغییر از ATH
-    const currentPrice = curveData.currentPriceSOL;
-    const percentageFromATH = maxPriceSOL > 0 
-      ? ((currentPrice - maxPriceSOL) / maxPriceSOL) * 100 
-      : 0;
-
-    return {
-      athSOL: maxPriceSOL,
-      athUSD: maxPriceUSD,
-      athMarketCapUSD: maxMarketCapUSD,
-      athTimestamp: athTimestamp,
-      percentageFromATH: percentageFromATH
-    };
-  };
-
-  const realATH = calculateRealATH();
-  
-  // استفاده از داده‌های واقعی ATH
-  const displayATHSOL = realATH.athSOL;
-  const displayATHUSD = realATH.athUSD;
-  const displayATHMarketCapUSD = realATH.athMarketCapUSD;
-  const displayATHTimestamp = new Date(realATH.athTimestamp);
+  // استفاده از داده‌های ATH که از سرور با فرمول اصلاح شده آمده
+  const displayATHSOL = curveData.athSOL;
+  const displayATHUSD = curveData.athUSD;
+  const displayATHMarketCapUSD = curveData.athMarketCapUSD;
+  const displayATHTimestamp = new Date(curveData.athTimestamp);
 
   // تبدیل string به Date برای استفاده در چارت
   const launchDate = new Date(curveData.launchTimestamp);
@@ -325,370 +340,6 @@ const SingleCurveView: React.FC<SingleCurveViewProps> = ({
   const percentageFromLaunch = curveData.launchPriceSOL > 0 
     ? ((curveData.currentPriceSOL - curveData.launchPriceSOL) / curveData.launchPriceSOL) * 100 
     : 0;
-
-  // تنظیمات چارت دو محوره (Dual Y-Axis)
-  const dualChartOptions: ApexCharts.ApexOptions = {
-    chart: {
-      type: 'line',
-      height: 450,
-      background: '#161b22',
-      foreColor: '#8b949e',
-      toolbar: {
-        show: true,
-        tools: {
-          download: true,
-          selection: true,
-          zoom: true,
-          zoomin: true,
-          zoomout: true,
-          pan: true,
-          reset: true
-        }
-      },
-      animations: {
-        enabled: true,
-        speed: 800
-      }
-    },
-    colors: ['#58a6ff', '#3fb950'],
-    stroke: {
-      width: [3, 3],
-      curve: 'smooth'
-    },
-    title: {
-      text: 'Price & Market Cap History - Real Bonding Curve Formula',
-      align: 'left',
-      style: {
-        color: '#ffffff',
-        fontSize: '16px'
-      }
-    },
-    xaxis: {
-      type: 'datetime',
-      labels: {
-        style: {
-          colors: '#8b949e'
-        }
-      }
-    },
-    yaxis: [
-      {
-        seriesName: 'Price',
-        axisTicks: {
-          show: true,
-          color: '#58a6ff'
-        },
-        axisBorder: {
-          show: true,
-          color: '#58a6ff'
-        },
-        labels: {
-          style: {
-            colors: '#58a6ff'
-          },
-          formatter: (value) => value.toFixed(8)
-        },
-        title: {
-          text: 'Price (SOL)',
-          style: {
-            color: '#58a6ff',
-            fontSize: '12px'
-          }
-        },
-        tooltip: {
-          enabled: true
-        }
-      },
-      {
-        seriesName: 'Market Cap',
-        opposite: true,
-        axisTicks: {
-          show: true,
-          color: '#3fb950'
-        },
-        axisBorder: {
-          show: true,
-          color: '#3fb950'
-        },
-        labels: {
-          style: {
-            colors: '#3fb950'
-          },
-          formatter: (value) => `$${value >= 1000000 ? (value/1000000).toFixed(1) + 'M' : value >= 1000 ? (value/1000).toFixed(1) + 'K' : value.toFixed(0)}`
-        },
-        title: {
-          text: 'Market Cap (USD)',
-          style: {
-            color: '#3fb950',
-            fontSize: '12px'
-          }
-        }
-      }
-    ],
-    grid: {
-      borderColor: '#30363d',
-      strokeDashArray: 4
-    },
-    tooltip: {
-      theme: 'dark',
-      x: {
-        format: 'dd MMM yyyy HH:mm'
-      },
-      shared: true,
-      intersect: false
-    },
-    markers: {
-      size: 0
-    },
-    legend: {
-      position: 'top',
-      horizontalAlign: 'left',
-      labels: {
-        colors: '#8b949e'
-      }
-    },
-    annotations: {
-      points: [{
-        x: launchDate.getTime(),
-        y: curveData.launchPriceSOL,
-        yAxisIndex: 0,
-        marker: {
-          size: 6,
-          fillColor: '#ffd33d',
-          strokeColor: '#ffd33d',
-          strokeWidth: 2
-        },
-        label: {
-          borderColor: '#ffd33d',
-          offsetY: 0,
-          style: {
-            color: '#fff',
-            background: '#ffd33d',
-            fontSize: '11px'
-          },
-          text: `Launch: ${curveData.launchPriceSOL.toFixed(8)} SOL`
-        }
-      },
-      {
-        x: displayATHTimestamp.getTime(),
-        y: displayATHSOL,
-        yAxisIndex: 0,
-        marker: {
-          size: 6,
-          fillColor: '#ff7b72',
-          strokeColor: '#ff7b72',
-          strokeWidth: 2
-        },
-        label: {
-          borderColor: '#ff7b72',
-          offsetY: 0,
-          style: {
-            color: '#fff',
-            background: '#ff7b72',
-            fontSize: '11px'
-          },
-          text: `ATH: ${displayATHSOL.toFixed(8)} SOL`
-        }
-      }]
-    }
-  };
-
-  // تنظیمات چارت قیمت تنها
-  const priceChartOptions: ApexCharts.ApexOptions = {
-    ...dualChartOptions,
-    colors: ['#58a6ff'],
-    title: {
-      text: 'Price History (SOL) - Real Bonding Curve Formula',
-      align: 'left',
-      style: {
-        color: '#ffffff',
-        fontSize: '16px'
-      }
-    },
-    yaxis: {
-      labels: {
-        style: {
-          colors: '#8b949e'
-        },
-        formatter: (value) => value.toFixed(8)
-      },
-      title: {
-        text: 'Price (SOL)',
-        style: {
-          color: '#8b949e'
-        }
-      }
-    },
-    annotations: {
-      points: [{
-        x: launchDate.getTime(),
-        y: curveData.launchPriceSOL,
-        marker: {
-          size: 6,
-          fillColor: '#ffd33d',
-          strokeColor: '#ffd33d',
-          strokeWidth: 2
-        },
-        label: {
-          borderColor: '#ffd33d',
-          offsetY: 0,
-          style: {
-            color: '#fff',
-            background: '#ffd33d',
-            fontSize: '12px'
-          },
-          text: `Launch: ${curveData.launchPriceSOL.toFixed(8)} SOL`
-        }
-      },
-      {
-        x: displayATHTimestamp.getTime(),
-        y: displayATHSOL,
-        marker: {
-          size: 6,
-          fillColor: '#ff7b72',
-          strokeColor: '#ff7b72',
-          strokeWidth: 2
-        },
-        label: {
-          borderColor: '#ff7b72',
-          offsetY: 0,
-          style: {
-            color: '#fff',
-            background: '#ff7b72',
-            fontSize: '12px'
-          },
-          text: `ATH: ${displayATHSOL.toFixed(8)} SOL`
-        }
-      }]
-    }
-  };
-
-  // تنظیمات چارت مارکت کپ تنها
-  const marketCapChartOptions: ApexCharts.ApexOptions = {
-    ...dualChartOptions,
-    colors: ['#3fb950'],
-    title: {
-      text: 'Market Cap History (USD) - Real Bonding Curve Formula',
-      align: 'left',
-      style: {
-        color: '#ffffff',
-        fontSize: '16px'
-      }
-    },
-    yaxis: {
-      labels: {
-        style: {
-          colors: '#8b949e'
-        },
-        formatter: (value) => `$${value.toLocaleString()}`
-      },
-      title: {
-        text: 'Market Cap (USD)',
-        style: {
-          color: '#8b949e'
-        }
-      }
-    },
-    annotations: {
-      points: [{
-        x: launchDate.getTime(),
-        y: curveData.launchMarketCapUSD,
-        marker: {
-          size: 6,
-          fillColor: '#ffd33d',
-          strokeColor: '#ffd33d',
-          strokeWidth: 2
-        },
-        label: {
-          borderColor: '#ffd33d',
-          offsetY: 0,
-          style: {
-            color: '#fff',
-            background: '#ffd33d',
-            fontSize: '12px'
-          },
-          text: `Launch: $${curveData.launchMarketCapUSD.toLocaleString()}`
-        }
-      },
-      {
-        x: displayATHTimestamp.getTime(),
-        y: displayATHMarketCapUSD,
-        marker: {
-          size: 6,
-          fillColor: '#ff7b72',
-          strokeColor: '#ff7b72',
-          strokeWidth: 2
-        },
-        label: {
-          borderColor: '#ff7b72',
-          offsetY: 0,
-          style: {
-            color: '#fff',
-            background: '#ff7b72',
-            fontSize: '12px'
-          },
-          text: `ATH: $${displayATHMarketCapUSD.toLocaleString()}`
-        }
-      }]
-    }
-  };
-
-  // داده‌های چارت دو محوره
-  const dualChartSeries = [
-    {
-      name: 'Price (SOL)',
-      type: 'line',
-      data: curveData?.priceHistory?.map(point => ({
-        x: point.x,
-        y: point.y
-      })) || []
-    },
-    {
-      name: 'Market Cap (USD)',
-      type: 'line',
-      data: curveData?.priceHistory?.map(point => ({
-        x: point.x,
-        y: point.marketCapUSD
-      })) || []
-    }
-  ];
-
-  // داده‌های چارت قیمت تنها
-  const priceChartSeries = [{
-    name: 'Price (SOL)',
-    data: curveData?.priceHistory?.map(point => ({
-      x: point.x,
-      y: point.y
-    })) || []
-  }];
-
-  // داده‌های چارت مارکت کپ تنها
-  const marketCapChartSeries = [{
-    name: 'Market Cap (USD)',
-    data: curveData?.priceHistory?.map(point => ({
-      x: point.x,
-      y: point.marketCapUSD
-    })) || []
-  }];
-
-  // انتخاب options و series بر اساس chartType
-  const getChartOptions = () => {
-    switch (chartType) {
-      case 'dual': return dualChartOptions;
-      case 'price': return priceChartOptions;
-      case 'marketcap': return marketCapChartOptions;
-      default: return dualChartOptions;
-    }
-  };
-
-  const getChartSeries = () => {
-    switch (chartType) {
-      case 'dual': return dualChartSeries;
-      case 'price': return priceChartSeries;
-      case 'marketcap': return marketCapChartSeries;
-      default: return dualChartSeries;
-    }
-  };
 
   return (
     <div>
@@ -744,14 +395,14 @@ const SingleCurveView: React.FC<SingleCurveViewProps> = ({
           </p>
         </div>
 
-        {/* کارت ATH - با داده‌های واقعی از چارت */}
+        {/* کارت ATH - با داده‌های اصلاح شده از سرور */}
         <div style={{
           background: '#161b22',
           padding: '20px',
           borderRadius: '10px',
           border: '1px solid #30363d'
         }}>
-          <h3>🏆 All Time High</h3>
+          <h3>🏆 All Time High (Corrected)</h3>
           <p style={{ fontSize: '24px', fontWeight: 'bold', color: '#ff7b72' }}>
             {displayATHSOL.toFixed(8)} SOL
           </p>
@@ -760,9 +411,9 @@ const SingleCurveView: React.FC<SingleCurveViewProps> = ({
           </p>
           <p style={{ 
             fontSize: '14px', 
-            color: realATH.percentageFromATH >= 0 ? '#3fb950' : '#ff7b72'
+            color: curveData.percentageFromATH >= 0 ? '#3fb950' : '#ff7b72'
           }}>
-            {realATH.percentageFromATH >= 0 ? '📈' : '📉'} {realATH.percentageFromATH.toFixed(2)}% from ATH
+            {curveData.percentageFromATH >= 0 ? '📈' : '📉'} {curveData.percentageFromATH.toFixed(2)}% from ATH
           </p>
           <p style={{ fontSize: '12px', color: '#8b949e' }}>
             Date: {displayATHTimestamp.toLocaleDateString()}
@@ -788,94 +439,19 @@ const SingleCurveView: React.FC<SingleCurveViewProps> = ({
           </p>
           <p style={{ 
             fontSize: '14px', 
-            color: realATH.percentageFromATH >= 0 ? '#3fb950' : '#ff7b72'
+            color: curveData.percentageFromATH >= 0 ? '#3fb950' : '#ff7b72'
           }}>
-            From ATH: {realATH.percentageFromATH.toFixed(2)}%
+            From ATH: {curveData.percentageFromATH.toFixed(2)}%
           </p>
         </div>
       </div>
 
       {/* چارت */}
-      <div style={{
-        background: '#161b22',
-        padding: '20px',
-        borderRadius: '10px',
-        border: '1px solid #30363d',
-        marginBottom: '30px'
-      }}>
-        <div style={{ 
-          display: 'flex', 
-          justifyContent: 'space-between', 
-          alignItems: 'center',
-          marginBottom: '20px',
-          flexWrap: 'wrap',
-          gap: '10px'
-        }}>
-          <h3 style={{ margin: 0 }}>📊 Real Bonding Curve Data</h3>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <button
-              onClick={() => setChartType('dual')}
-              style={{
-                padding: '8px 12px',
-                background: chartType === 'dual' ? '#238636' : '#30363d',
-                color: 'white',
-                border: '1px solid #30363d',
-                borderRadius: '5px',
-                cursor: 'pointer',
-                fontSize: '12px'
-              }}
-            >
-              📊 Both
-            </button>
-            <button
-              onClick={() => setChartType('price')}
-              style={{
-                padding: '8px 12px',
-                background: chartType === 'price' ? '#238636' : '#30363d',
-                color: 'white',
-                border: '1px solid #30363d',
-                borderRadius: '5px',
-                cursor: 'pointer',
-                fontSize: '12px'
-              }}
-            >
-              💰 Price
-            </button>
-            <button
-              onClick={() => setChartType('marketcap')}
-              style={{
-                padding: '8px 12px',
-                background: chartType === 'marketcap' ? '#238636' : '#30363d',
-                color: 'white',
-                border: '1px solid #30363d',
-                borderRadius: '5px',
-                cursor: 'pointer',
-                fontSize: '12px'
-              }}
-            >
-              📈 Market Cap
-            </button>
-          </div>
-        </div>
-
-        <div style={{ marginBottom: '15px', color: '#8b949e', fontSize: '14px' }}>
-          {chartType === 'dual' && (
-            <>
-              <span style={{ color: '#58a6ff' }}>●</span> Price (SOL) • 
-              <span style={{ color: '#3fb950' }}> ●</span> Market Cap (USD) • 
-            </>
-          )}
-          <span style={{ color: '#ffd33d' }}> ●</span> Launch • 
-          <span style={{ color: '#ff7b72' }}> ●</span> ATH
-        </div>
-
-        <Chart
-          options={getChartOptions()}
-          series={getChartSeries()}
-          type="line"
-          height={450}
-        />
-      </div>
+      <BondingCurveChart
+        curveData={curveData}
+        chartType={chartType}
+        onChartTypeChange={onChartTypeChange}
+      />
 
       {/* اطلاعات جزئی */}
       <div style={{
@@ -960,9 +536,18 @@ const AllCurvesView: React.FC<{
                 padding: '15px',
                 borderRadius: '10px',
                 border: '1px solid #30363d',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
               }}
               onClick={() => onCurveClick(curve.curveAddress)}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#1c2128';
+                e.currentTarget.style.borderColor = '#58a6ff';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = '#161b22';
+                e.currentTarget.style.borderColor = '#30363d';
+              }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
@@ -997,7 +582,7 @@ const AllCurvesView: React.FC<{
 
 // کامپوننت برای نمایش top ATH
 const TopATHView: React.FC<{ 
-  curves: CurveData[]; 
+  curves: TopATHData[]; 
   onCurveClick: (address: string) => void;
 }> = ({ curves, onCurveClick }) => {
   const formatAddress = (address: string) => {
@@ -1007,7 +592,7 @@ const TopATHView: React.FC<{
   return (
     <div>
       <h2 style={{ textAlign: 'center', marginBottom: '20px' }}>
-        🏆 Top ATH Curves ({curves.length})
+        🏆 Top ATH Curves - Corrected Formula ({curves.length})
       </h2>
       
       {curves.length === 0 ? (
@@ -1027,9 +612,18 @@ const TopATHView: React.FC<{
                 padding: '15px',
                 borderRadius: '10px',
                 border: '1px solid #30363d',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
               }}
               onClick={() => onCurveClick(curve.curveAddress)}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = '#1c2128';
+                e.currentTarget.style.borderColor = '#ff7b72';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = '#161b22';
+                e.currentTarget.style.borderColor = '#30363d';
+              }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
