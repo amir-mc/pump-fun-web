@@ -966,6 +966,7 @@ const TopATHView: React.FC<{
                   </div>
                   <div style={{ fontSize: '12px', color: '#8b949e' }}>
                     Current: {formatNumber(curve.currentPriceSOL, 8)} SOL
+                    
                   </div>
                 </div>
               </div>
