@@ -328,7 +328,7 @@ const CryptoChart: React.FC = () => {
       fontFamily: 'Arial, sans-serif'
     }}>
       <h1 style={{ textAlign: 'center', marginBottom: '30px', color: '#58a6ff' }}>
-        📊 Advanced Bonding Curve Analytics
+        📊 Advanced Bonding Curve Analytics 
       </h1>
 
       {/* تب‌ها */}
